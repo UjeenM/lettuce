@@ -75,6 +75,7 @@ class Language(object):
     examples = 'Examples|Scenarios'
     scenario_outline = 'Scenario Outline'
     scenario_separator = 'Scenario( Outline)?'
+    background = 'Background'
 
     def __init__(self, code=u'en'):
         self.code = code
@@ -656,7 +657,11 @@ class Scenario(object):
         call_hook('before_each', 'scenario', self)
 
         def run_scenario(almost_self, order=-1, outline=None, run_callbacks=False):
-            all_steps, steps_passed, steps_failed, steps_undefined, reasons_to_fail = Step.run_all(self.steps, outline, run_callbacks, ignore_case)
+            if self.feature.background and self.feature.background.steps:
+                steps = self.feature.background.steps + self.steps
+            else:
+                steps = self.steps
+            all_steps, steps_passed, steps_failed, steps_undefined, reasons_to_fail = Step.run_all(steps, outline, run_callbacks, ignore_case)
             skip = lambda x: x not in steps_passed and x not in steps_undefined and x not in steps_failed
 
             steps_skipped = filter(skip, all_steps)
@@ -820,6 +825,16 @@ class Scenario(object):
 
         return scenario
 
+class Background(object):
+    """
+    Object that represents a future background definition
+    Steps defined in background section are executed before each scenario in a feature
+    """
+
+    def __init__(self, string):
+        self.feature = None
+        lines = strings.get_stripped_lines(string)
+        self.steps = Step.many_from_lines(lines, None, string)
 
 class Feature(object):
     """ Object that represents a feature."""
@@ -834,7 +849,7 @@ class Feature(object):
         self.name = name
         self.language = language
 
-        self.scenarios, self.description = self._parse_remaining_lines(
+        self.scenarios, self.description, self.background = self._parse_remaining_lines(
             remaining_lines,
             original_string,
             with_file)
@@ -847,7 +862,8 @@ class Feature(object):
                                                     original_string,
                                                     language)
             self._set_definition(feature_definition)
-
+        if self.background:
+            self.background.feature = self
         self._add_myself_to_scenarios()
 
     @property
@@ -940,6 +956,26 @@ class Feature(object):
         # replacing occurrences of Scenario Outline, with just "Scenario"
         joined = u"\n".join(lines[1:])
         scenario_prefix = u'%s:' % self.language.first_of_scenario
+
+        background_prefix = u'%s:' % self.language.background
+        background_exists = 0
+        parts = strings.split_wisely(joined, background_prefix)
+
+        description = u""
+        if len(parts) == 1 and re.search(u"^" + background_prefix, joined):
+            joined = parts[0]
+            background_exists = 1
+        if len(parts) == 2:
+            description = parts[0]
+            if re.search(u"^" + scenario_prefix, description, re.U | re.M | re.DOTALL):
+                raise LettuceSyntaxError(with_file,
+                    "Background section should be before any scenario")
+            joined = parts[1]
+            background_exists = 1
+        if len(parts) == 3:
+            raise LettuceSyntaxError(with_file,
+                "There should be only one background section")
+
         regex = re.compile(
             u"%s:\s" % self.language.scenario_separator, re.U | re.I | re.DOTALL)
 
@@ -947,11 +983,16 @@ class Feature(object):
 
         parts = strings.split_wisely(joined, scenario_prefix)
 
-        description = u""
-
-        if not re.search("^" + scenario_prefix, joined):
-            description = parts[0]
+        background_strings = u""
+        if background_exists == 1:
+            background_strings = parts[0]
             parts.pop(0)
+        else:
+            description = u""
+
+            if not re.search("^" + scenario_prefix, joined):
+                description = parts[0]
+                parts.pop(0)
 
         prefix = self.language.first_of_scenario
         upcoming_scenarios = [
@@ -981,7 +1022,12 @@ class Feature(object):
             current_scenario = Scenario.from_string(current, **params)
             scenarios.append(current_scenario)
 
-        return scenarios, description
+        if background_exists==1:
+            background = Background(background_strings)
+        else:
+            background = None
+
+        return scenarios, description, background
 
     def run(self, scenarios=None, ignore_case=True, tags=None):
         call_hook('before_each', 'feature', self)

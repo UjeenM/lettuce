@@ -18,6 +18,7 @@ from lettuce import step
 from lettuce import after
 from lettuce import core
 from lettuce import registry
+from lettuce import world
 from lettuce.core import Step
 from lettuce.core import Feature
 from lettuce.exceptions import StepLoadingError
@@ -100,6 +101,20 @@ FEATURE9 = """
 Feature: When using behave_as, the new steps have the same scenario
   Scenario: The Original Scenario
     Given I have a step which calls the "access the scenario" step with behave_as
+"""
+
+FEATURE10 = """
+Feature: Steps in background should be executed before each scenario
+    In order to check background steps execution
+
+    Background:
+        Given add one
+
+    Scenario: first scenario
+        Then current number should be "1"
+
+    Scenario: second scenario
+        Then current number should be "2"
 """
 
 def step_runner_environ():
@@ -226,7 +241,7 @@ def test_steps_are_aware_of_its_definitions():
 
     step1 = scenario_result.steps_passed[0]
 
-    assert_equals(step1.defined_at.line, 112)
+    assert_equals(step1.defined_at.line, 127)
     assert_equals(step1.defined_at.file, core.fs.relpath(__file__.rstrip("c")))
 
 @with_setup(step_runner_environ)
@@ -497,3 +512,16 @@ def test_invalid_regex_raise_an_error():
         def step_with_bad_regex(step):
             pass
     assert_raises(StepLoadingError, load_step)
+
+def test_background_steps():
+    world.current_number = 0
+    @step('add one')
+    def add_one(step):
+        world.current_number += 1
+    @step('current number should be "(.*)"')
+    def check_number(step, check_number):
+        assert str(world.current_number) == check_number
+    feature = Feature.from_string(FEATURE10)
+    feature_result = feature.run()
+    world.spew('current_number')
+    assert feature_result.passed

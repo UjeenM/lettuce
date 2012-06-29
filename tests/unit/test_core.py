@@ -175,3 +175,36 @@ def test_scenario_outline_represent_examples():
         '    | first     | primeiro  |\n'
         '    | second    | segundo   |\n'
     )
+
+def test_feature_with_background():
+    "Test that feature with background section is successfully parsed"
+
+    FEATURE = """
+Feature: with background
+    In order to execute background steps before each scenario
+
+    Background:
+        Given BACKGROUND
+
+    Scenario: test
+        Given I do nothing
+"""
+
+    feature = core.Feature.from_string(FEATURE)
+    assert feature.background is not None
+    assert feature.background.feature
+    assert feature.background.steps
+
+def test_feature_with_no_background():
+    "Test that feature with background section is successfully parsed"
+
+    FEATURE = """
+Feature: with background
+    In order to execute background steps before each scenario
+
+    Scenario: test
+        Given I do nothing
+"""
+
+    feature = core.Feature.from_string(FEATURE)
+    assert feature.background is None

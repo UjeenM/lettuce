@@ -18,7 +18,8 @@ from sure import that
 from lettuce import step
 from lettuce.core import Scenario
 from lettuce.core import Feature
-from nose.tools import assert_equals
+from lettuce.core import LettuceSyntaxError
+from nose.tools import assert_equals, raises
 
 FEATURE1 = """
 Feature: Rent movies
@@ -53,6 +54,9 @@ FEATURE2 = """
 Feature: Division
       In order to avoid silly mistakes
       Cashiers must be able to calculate a fraction
+
+      Background:
+          Given background doesn't break parsing
 
       Scenario: Regular numbers
             * I have entered 3 into the calculator
@@ -204,6 +208,49 @@ Feature:    Extra whitespace feature
   Scenario:    Extra whitespace scenario
     Given this scenario, which has extra leading whitespace
     Then the scenario definition should still match
+"""
+
+FEATURE15 = """
+Feature: Feature with invalid background steps
+  I want steps from background section to be executed before each scenario
+
+  Scenario: The scenario
+    Given I have nothing to do
+    Then I do nothing
+
+  Background:
+    Given this
+
+  Scenario: Second scenario
+    Given do nothing
+"""
+
+FEATURE16 = """
+Feature: Feature with two background sections
+  I want steps from background section to be executed before each scenario
+
+  Background:
+    Given this
+
+  Scenario: The scenario
+    Given I have nothing to do
+    Then I do nothing
+
+  Background:
+    Given that
+
+  Scenario: Second scenario
+    Given do nothing
+"""
+
+FEATURE17 = """
+Feature: Feature with background and no description
+
+  Background:
+    Given this
+
+  Scenario: Second scenario
+    Given do nothing
 """
 
 
@@ -442,3 +489,35 @@ def test_scenarios_with_extra_whitespace():
     scenario = feature.scenarios[0]
     assert_equals(type(scenario), Scenario)
     assert_equals(scenario.name, "Extra whitespace scenario")
+
+def test_feature_has_background():
+    """Ensure that background section is parsed as expected"""
+    feature = Feature.from_string(FEATURE2)
+
+    assert feature.background is not None
+    assert feature.background.steps
+    assert_equals(len(feature.background.steps), 1)
+    assert_equals(len(feature.scenarios), 1)
+    assert_equals(len(feature.scenarios[0].steps), 4)
+
+def test_feature_has_no_background():
+    """Ensure feature has no background section"""
+    feature = Feature.from_string(FEATURE1)
+
+    assert feature.background is None
+
+@raises(LettuceSyntaxError)
+def test_feature_with_wrong_background_pos():
+    """Background section in wrong place is illegal"""
+    feature = Feature.from_string(FEATURE15)
+
+@raises(LettuceSyntaxError)
+def test_feature_with_two_background_sections():
+    """More than one background sections is illegal"""
+    feature = Feature.from_string(FEATURE16)
+
+def test_feature_background_no_description():
+    """Test feature with background and no description"""
+    feature = Feature.from_string(FEATURE17)
+
+    assert feature.background
